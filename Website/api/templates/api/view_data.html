@@ -49,6 +49,10 @@ Home | Fraud Detection System
                 <h3 style="text-align: center; margin-bottom: 10px;">Transaction Distribution of Fraud Scenario</h3>
                 <canvas id="pieChart" style="max-width: 100%;"></canvas>
             </div>
+            <div style="max-width: 600px; border: 1px solid #ccc; border-radius: 5px; padding: 10px; background-color: #f9f9f9; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 20px;">
+                <h3 style="text-align: center; margin-bottom: 10px;">Customer-wise Percentage Distribution</h3>
+                <canvas id="barChart" style="max-width: 100%;"></canvas>
+            </div>
         </div>
     </div>
     </section><!-- End Hero -->
@@ -123,31 +127,26 @@ Home | Fraud Detection System
             e.preventDefault();
             table.ajax.reload();
         });
-
-        // Render pie chart after filtering
+        
         table.on('xhr', function () {
-            var data = table.ajax.json().data;
-            var lastColumnData = data.map(row => row[row.length - 1]); // last column
-            var counts = {};
-            lastColumnData.forEach(val => {
-                counts[val] = (counts[val] || 0) + 1;
-            });
+            var response = table.ajax.json();
 
-            var labels = Object.keys(counts);
-            var values = Object.values(counts);
+            // Pie Chart Data
+            var pieLabels = response.pie_chart.labels;
+            var pieValues = response.pie_chart.values;
 
-            // Destroy previous chart if exists
+            // Destroy previous pie chart if exists
             if (window.pieChartInstance) {
                 window.pieChartInstance.destroy();
             }
 
-            var ctx = document.getElementById('pieChart').getContext('2d');
-            window.pieChartInstance = new Chart(ctx, {
+            var pieCtx = document.getElementById('pieChart').getContext('2d');
+            window.pieChartInstance = new Chart(pieCtx, {
                 type: 'pie',
                 data: {
-                    labels: labels,
+                    labels: pieLabels,
                     datasets: [{
-                        data: values,
+                        data: pieValues,
                         backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
                     }]
                 },
@@ -158,17 +157,101 @@ Home | Fraud Detection System
                         tooltip: {
                             callbacks: {
                                 label: function (tooltipItem) {
-                                    var total = values.reduce((a, b) => a + b, 0);
-                                    var value = values[tooltipItem.dataIndex];
+                                    var total = pieValues.reduce((a, b) => a + b, 0);
+                                    var value = pieValues[tooltipItem.dataIndex];
                                     var percentage = ((value / total) * 100).toFixed(2);
-                                    return `${labels[tooltipItem.dataIndex]}: ${percentage}%`;
+                                    return `${pieLabels[tooltipItem.dataIndex]}: ${percentage}%`;
                                 }
                             }
                         }
                     }
                 }
             });
+
+            // Bar Chart Data
+            var barCategories = response.bar_chart.categories;
+            var barSeries = response.bar_chart.series;
+
+            // Destroy previous bar chart if exists
+            if (window.barChartInstance) {
+                window.barChartInstance.destroy();
+            }
+
+            var barCtx = document.getElementById('barChart').getContext('2d');
+            window.barChartInstance = new Chart(barCtx, {
+                type: 'bar',
+                data: {
+                    labels: barCategories,
+                    datasets: barSeries.map(series => ({
+                        label: series.name,
+                        data: series.data,
+                        backgroundColor: '#36A2EB'
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: function (tooltipItem) {
+                                    return `${tooltipItem.dataset.label}: ${tooltipItem.raw.toFixed(2)}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, ticks: { callback: value => `${value}%` } }
+                    }
+                }
+            });
         });
+        // // Render pie chart after filtering
+        // table.on('xhr', function () {
+        //     var data = table.ajax.json().data;
+        //     var lastColumnData = data.map(row => row[row.length - 1]); // last column
+        //     var counts = {};
+        //     lastColumnData.forEach(val => {
+        //         counts[val] = (counts[val] || 0) + 1;
+        //     });
+
+        //     var labels = Object.keys(counts);
+        //     var values = Object.values(counts);
+
+        //     // Destroy previous chart if exists
+        //     if (window.pieChartInstance) {
+        //         window.pieChartInstance.destroy();
+        //     }
+
+        //     var ctx = document.getElementById('pieChart').getContext('2d');
+        //     window.pieChartInstance = new Chart(ctx, {
+        //         type: 'pie',
+        //         data: {
+        //             labels: labels,
+        //             datasets: [{
+        //                 data: values,
+        //                 backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
+        //             }]
+        //         },
+        //         options: {
+        //             responsive: true,
+        //             plugins: {
+        //                 legend: { position: 'top' },
+        //                 tooltip: {
+        //                     callbacks: {
+        //                         label: function (tooltipItem) {
+        //                             var total = values.reduce((a, b) => a + b, 0);
+        //                             var value = values[tooltipItem.dataIndex];
+        //                             var percentage = ((value / total) * 100).toFixed(2);
+        //                             return `${labels[tooltipItem.dataIndex]}: ${percentage}%`;
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     });
+        // });
     });
 </script>
 {% endblock %}
