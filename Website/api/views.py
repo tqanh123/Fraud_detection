@@ -5,7 +5,10 @@ from django.shortcuts import render,redirect,get_object_or_404
 from django.http.response import HttpResponseRedirect,HttpResponse,JsonResponse
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
+from pyspark.sql import SparkSession
+
 from .models import DataFileUpload
+from .utils import extract_time_features, load_model
 
 
 def base(request):
@@ -110,7 +113,21 @@ def userLogout(request):
     logout(request)
     return HttpResponseRedirect('/') 
     
+def predict_fraud(request):
+    if request.method == 'POST' and request.FILES.get('datafile'):
 
+        uploaded_file = request.FILES['datafile']
+
+        spark = SparkSession.builder.getOrCreate()
+
+        test_df = spark.read.csv(uploaded_file.temporary_file_path(), header=True, inferSchema=True)
+
+        test_df = extract_time_features(test_df)
+
+        trained_model = load_model('ModelTraining/LogisticRegressionModel')
+
+        predictions = trained_model.transform(test_df)
+        #proba...
 def login2(request):
     data = {}
     if request.method == "POST":
@@ -119,7 +136,9 @@ def login2(request):
         user = authenticate(request, username=username, password=password)
         print(user)
         if user:
+            print("DEBUG — user.pk is:", user.pk)
             login(request, user)
+
             return HttpResponseRedirect('/')
         
         else:    
