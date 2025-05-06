@@ -3,38 +3,112 @@ Detection System {% endblock %} {% block css %}
 
 <link href="{% static 'assets/css/teststyle.css' %}" rel="stylesheet" />
 <link href="{% static 'assets/css/style.css' %}" rel="stylesheet" />
-{% endblock %} {% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+{% endblock %} 
+
+{% block content %}
 <main id="main">
-  <!-- ======= Hero Section ======= -->
-  <section id="homesection" style="padding: 0px 0px">
+    <!-- ======= Hero Section ======= -->
+    <section id="homesection" style="padding: 0px 0px;"></section>
     <!--__________________________________ header-box______________________________________________ -->
     <div id="header-container">
-      <h1 id="header2">FRAUD DETECTION</h1>
+        <h1 id="header2">PREDICTION DATA RESULT</h1>
     </div>
-    <!-- ___________________________________main-division____________________________________________ -->
+    <div style="max-width: 90%; margin: auto;">
+        <!-- Data Table -->
+        <div style="width: 100%; margin: 20px auto;">
+            <table id="predictionTable" class="table table-striped">
+                <thead>
+                    <tr>
+                        {% for col in columns %}
+                        <th>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table_data %}
+                    <tr>
+                        {% for cell in row.values %}
+                        <td>{{ cell }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
 
-    <div class="fraud-container" style="margin-bottom: 25px">
-      <div class="fraud-header-container">
-        <h3 class="fraud-header">
-          CHOOSE TYPE OF DATA YOU WANT TO CHECK FOR DETECTING FRAUD
-        </h3>
-      </div>
-      <div id="fraud-buttons-container">
-        {% comment %}
-        <a href="{% url 'enter_form_data_manually' %}"
-          ><div class="fraud-buttons">ENTER FORM DATA MANUALLY</div></a
-        >
-        {% endcomment %}
-        <a href="{% url 'add_files_single' id%} "
-          ><div class="fraud-buttons">UPLOAD SINGLE CSV RECORD</div></a
-        >
-        <a href="{% url 'add_files_multi' id%}"
-          ><div class="fraud-buttons">UPLOAD MULTIPLE CSV RECORD</div></a
-        >
-      </div>
+        <!-- Bar Chart Section -->
+        <div style=" margin: 20px auto; max-width: 80%; border: 1px solid #ccc; border-radius: 5px; padding: 10px; background-color: #f9f9f9; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h3 style="text-align: center; margin-bottom: 10px;">Customer-wise Fraud Probability</h3>
+            <canvas id="barChart"></canvas>
+        </div>
     </div>
-  </section>
-  <!-- End Hero -->
 </main>
 
+<script>
+    // Render Bar Chart
+    document.addEventListener("DOMContentLoaded", function () {
+        var ctx = document.getElementById('barChart').getContext('2d');
+        var barChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: {{ bar_chart.categories|safe }},
+                datasets: [
+                    {% for series in bar_chart.series %}
+                    {
+                        label: "{{ series.name }}",
+                        data: {{ series.data|safe }},
+                        backgroundColor: {% if forloop.counter == 1 %} 'rgba(255, 99, 132, 0.2)' {% else %} 'rgba(75, 192, 75, 0.2)' {% endif %}, /* Red for Not Fraud, Green for Fraud */
+                        borderColor: {% if forloop.counter == 1 %} 'rgba(255, 99, 132, 1)' {% else %} 'rgba(75, 192, 75, 1)' {% endif %}, /* Red for Not Fraud, Green for Fraud */
+                        borderWidth: 1
+                    },
+                    {% endfor %}
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (tooltipItem) {
+                                return tooltipItem.raw.toFixed(2) + '%';
+                            }
+                        }
+                    },
+                    datalabels: {
+                        display: true,
+                        color: 'black',
+                        anchor: 'center',
+                        align: 'center',
+                        formatter: function (value) {
+                            return value.toFixed(2) + '%'; // Format the value as a percentage
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: true, // Enable stacking on the x-axis
+                        title: {
+                            display: true,
+                            text: 'Customer ID'
+                        }
+                    },
+                    y: {
+                        stacked: true, // Enable stacking on the y-axis
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Fraud Probability (%)'
+                        }
+                    }
+                }
+            },
+            plugins: [ChartDataLabels]
+        });
+    });
+</script>
 {% endblock %}
