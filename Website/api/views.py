@@ -1,11 +1,15 @@
 import io
+import os
 import pickle
 import pandas as pd
 from django.shortcuts import render,redirect,get_object_or_404
 from django.http.response import HttpResponseRedirect,HttpResponse,JsonResponse
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
+from pyspark.sql import SparkSession
+
 from .models import DataFileUpload
+from .utils import extract_time_features, load_model
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_date, date_format, count, lit
@@ -17,9 +21,131 @@ def base(request):
 def upload_credit_data(request):
     return render(request,'api/upload_credit_data.html')
 
-def prediction_button(request,id):
-    return render(request,'api/fraud_detection.html', {'id': id})
-    
+def prediction_button(request, id):
+    # Set environment variables
+    os.environ["PYSPARK_PYTHON"] = "..\\venv\\Scripts\\python.exe"
+    os.environ["PYSPARK_DRIVER_PYTHON"] = "..\\venv\\Scripts\\python.exe"
+
+    try:
+        # Load the data file
+        obj = DataFileUpload.objects.get(id=id)
+        spark = SparkSession.builder.appName("FraudDetection").getOrCreate()
+        df = spark.read.csv(obj.actual_file.path, header=True, inferSchema=True)
+
+        # Extract time features (if needed for the model)
+        df = extract_time_features(df)
+
+        # Load the trained model
+        trained_model = load_model('ModelTraining/LogisticRegressionModel')
+
+        # Make predictions
+        predictions = trained_model.transform(df)
+        print("Model loaded successfully:", trained_model)
+
+        # Convert predictions to Pandas DataFrame
+        pandas_df = predictions.toPandas()
+
+        # Prepare data for the bar chart
+        # Extract fraud probabilities (x = not fraud, y = fraud)
+        if "probability" in predictions.columns:
+            pandas_df['not_fraud'] = pandas_df['probability'].apply(lambda prob: prob[0] * 100)  # Convert to percentage
+            pandas_df['fraud'] = pandas_df['probability'].apply(lambda prob: prob[1] * 100)  # Convert to percentage
+
+            # Group by CUSTOMER_ID and calculate average probabilities
+            bar_data = pandas_df.groupby("CUSTOMER_ID")[["not_fraud", "fraud"]].mean().reset_index()
+
+            # Prepare data for the bar chart
+            bar_chart = {
+                "categories": bar_data["CUSTOMER_ID"].tolist(),
+                "series": [
+                    {"name": "Not Fraud", "data": bar_data["not_fraud"].tolist()},
+                    {"name": "Fraud", "data": bar_data["fraud"].tolist()}
+                ]
+            }
+        else:
+            bar_chart = {"categories": [], "series": []}
+
+        print("Bar chart data:", bar_chart)
+
+        # Drop unnecessary columns
+        columns_to_drop = ['features', 'scaled_features', 'rawPrediction', 'probability', 'not_fraud', 'fraud']
+        pandas_df = pandas_df.drop(columns=columns_to_drop, errors='ignore')
+
+
+        # Pass data to the template
+        return render(request, 'api/fraud_detection.html', {
+            'id': id,
+            'table_data': pandas_df.to_dict(orient="records"),
+            'columns': pandas_df.columns.tolist(),
+            'bar_chart': bar_chart
+        })
+
+    except FileNotFoundError as e:
+        return HttpResponse(f"Error: {str(e)}", status=404)
+    except RuntimeError as e:
+        return HttpResponse(f"Error: {str(e)}", status=500)
+    except Exception as e:
+        return HttpResponse(f"An unexpected error occurred: {str(e)}", status=500)
+
+# def prediction_button(request, id):
+#     # Set environment variables
+#     os.environ["PYSPARK_PYTHON"] = "..\\venv\\Scripts\\python.exe"
+#     os.environ["PYSPARK_DRIVER_PYTHON"] = "..\\venv\\Scripts\\python.exe"
+
+#     try:
+#         # Load the data file
+#         obj = DataFileUpload.objects.get(id=id)
+#         spark = SparkSession.builder.appName("FraudDetection").getOrCreate()
+#         df = spark.read.csv(obj.actual_file.path, header=True, inferSchema=True)
+
+#         # Extract time features (if needed for the model)
+#         df = extract_time_features(df)
+
+#         # Load the trained model
+#         trained_model = load_model('ModelTraining/LogisticRegressionModel')
+
+#         # Make predictions
+#         predictions = trained_model.transform(df)
+#         print("Model loaded successfully:", trained_model)
+
+#         # Convert predictions to Pandas DataFrame
+#         pandas_df = predictions.toPandas()
+
+#         # Drop unnecessary columns
+#         columns_to_drop = ['features', 'scaled_features', 'rawPrediction', 'probability']
+#         pandas_df = pandas_df.drop(columns=columns_to_drop, errors='ignore')
+
+#         # Prepare data for the bar chart
+#         if "probability" in predictions.columns:
+#             # Extract fraud probability (y value from [x, y])
+#             pandas_df['fraud_probability'] = predictions.select("probability").rdd.map(lambda row: row.probability[1]).collect()
+
+#             # Group by CUSTOMER_ID and calculate average fraud probability
+#             bar_data = pandas_df.groupby("CUSTOMER_ID")['fraud_probability'].mean().reset_index()
+
+#             bar_chart = {
+#                 "categories": bar_data["CUSTOMER_ID"].tolist(),
+#                 "series": [{"name": "Fraud Probability", "data": bar_data["fraud_probability"].tolist()}]
+#             }
+#         else:
+#             bar_chart = {"categories": [], "series": []}
+
+#         # Pass data to the template
+#         return render(request, 'api/fraud_detection.html', {
+#             'id': id,
+#             'table_data': pandas_df.to_dict(orient="records"),
+#             'columns': pandas_df.columns.tolist(),
+#             'bar_chart': bar_chart
+#         })
+
+#     except FileNotFoundError as e:
+#         return HttpResponse(f"Error: {str(e)}", status=404)
+#     except RuntimeError as e:
+#         return HttpResponse(f"Error: {str(e)}", status=500)
+#     except Exception as e:
+#         return HttpResponse(f"An unexpected error occurred: {str(e)}", status=500)
+
+
 def reports(request):
     all_data_files_objs=DataFileUpload.objects.all()
     return render(request,'api/reports.html',{'all_files':all_data_files_objs})
@@ -161,7 +287,21 @@ def userLogout(request):
     logout(request)
     return HttpResponseRedirect('/') 
     
+def predict_fraud(request):
+    if request.method == 'POST' and request.FILES.get('datafile'):
 
+        uploaded_file = request.FILES['datafile']
+
+        spark = SparkSession.builder.getOrCreate()
+
+        test_df = spark.read.csv(uploaded_file.temporary_file_path(), header=True, inferSchema=True)
+
+        test_df = extract_time_features(test_df)
+
+        trained_model = load_model('ModelTraining/LogisticRegressionModel')
+
+        predictions = trained_model.transform(test_df)
+        #proba...
 def login2(request):
     data = {}
     if request.method == "POST":
@@ -170,7 +310,9 @@ def login2(request):
         user = authenticate(request, username=username, password=password)
         print(user)
         if user:
+            print("DEBUG — user.pk is:", user.pk)
             login(request, user)
+
             return HttpResponseRedirect('/')
         
         else:    
