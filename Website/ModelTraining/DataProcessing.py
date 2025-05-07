@@ -7,9 +7,7 @@ from pyspark.sql.functions import col, sum, when, mean, udf, avg, variance, coun
 from pyspark.ml.feature import OneHotEncoder, StringIndexer, MinMaxScaler
 import findspark
 from pyspark.sql import SparkSession
-
 from api.utils import extract_time_features
-
 
 def split_data(df): #create balanced test set
    # Initial random split
@@ -34,7 +32,6 @@ def split_data(df): #create balanced test set
 
    return train, balanced_test
 
-
 def smote(train_pd, target_column='TX_FRAUD'):
    X = train_pd.drop(columns=[target_column])
    y = train_pd[target_column]
@@ -46,7 +43,6 @@ def smote(train_pd, target_column='TX_FRAUD'):
    resampled_data[target_column] = y_resampled
 
    return resampled_data
-
 
 def save_to_csv(df, filepath):
 
@@ -64,19 +60,21 @@ def main():
    df.printSchema()
    fraud_rate = df.groupBy("TX_FRAUD").count()
    fraud_rate.show()
+
    # extract time features
    df_time_extracted = extract_time_features(df)
 
    #balanced and fit data
    train,test = split_data(df_time_extracted)
-
+   #
    test.groupBy("TX_FRAUD").count().show()
-
+   #
    train.groupBy("TX_FRAUD").count().show()
    train_pd = train.toPandas()
 
    save_to_csv(smote(train_pd),'data/balanced_training_set.csv')
    save_to_csv(test.toPandas(),'data/test_set.csv')
+
 
    spark.stop()
 if __name__ == '__main__':
