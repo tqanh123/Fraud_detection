@@ -10,6 +10,21 @@ from .models import DataFileUpload
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_date, date_format, count, lit
 
+import logging 
+import os
+
+logger = logging.getLogger(__name__)
+# $env:SPARK_HOME = "D:/App/spark-3.5.5-bin-hadoop3"
+# $env:HADOOP_HOME = "D:/App/hadoop"
+# $env:JAVA_HOME = "C:/Program Files/Java/jdk-24"
+# $env:PYSPARK_PYTHON = "..\\venv\\Scripts\\python.exe"
+# $env:PYSPARK_DRIVER_PYTHON = "..\\venv\\Scripts\\python.exe"
+
+os.environ["SPARK_HOME"] = "D:/App/spark-3.5.5-bin-hadoop3"
+os.environ["HADOOP_HOME"] = "D:/App/hadoop"
+os.environ["JAVA_HOME"] = "C:/Program Files/Java/jdk-1.8"
+os.environ["PYSPARK_PYTHON"] = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "venv", "Scripts", "python.exe")
+os.environ["PYSPARK_DRIVER_PYTHON"] = os.environ["PYSPARK_PYTHON"]
 
 def base(request):
     return render(request,'api/landing_page.html')
@@ -56,103 +71,88 @@ def view_data(request,id):
     columns = df.columns.tolist()
     return render(request,'api/view_data.html', {'id': id, 'columns': columns})
 
-# def retrieve_data_by_id(request, id):
-#     obj = DataFileUpload.objects.get(id=id)
-#     df = pd.read_csv(obj.actual_file.path)
-
-#     # Receive parameters from DataTables on the frontend
-#     draw = int(request.GET.get('draw', 1))
-#     start = int(request.GET.get('start', 0))
-#     length = int(request.GET.get('length', 10))
-#     customer_id = request.GET.get('customer_id')
-#     tx_month = request.GET.get('tx_month')
-
-#     print("retrive data")
-#     print("draw: ", draw)
-#     print("start: ", start)
-#     print("customer id: ", customer_id)
-#     print("tx month: ", tx_month)
-
-
-#     # Filter data based on customer_id and tx_month
-#     if customer_id:
-#         customer_id = int(customer_id)
-#         df = df[df['CUSTOMER_ID'] == customer_id]
-
-#     if tx_month:
-#         try:
-#             print("tx month: ", tx_month)
-#             df['TX_DATETIME'] = pd.to_datetime(df['TX_DATETIME'])
-#             # Extract month and year from TX_DATETIME
-#             df['TX_MONTH_YEAR'] = df['TX_DATETIME'].dt.strftime('%m-%Y')
-#             # Compare with tx_month
-#             df = df[df['TX_MONTH_YEAR'] == tx_month]
-#         except Exception as e:
-#             print("Error in filtering by month:", e)
-
-#     # Paginate the data from the CSV using start and length
-#     paginated_df = df.iloc[start:start+length].reset_index()
-#     paginated_df['index'] = paginated_df['index'] + 1 + start
-
-#     # Convert the paginated data to a list of lists
-#     data = paginated_df.values.tolist()
-
-#     # Return a JSON response suitable for DataTables
-#     return JsonResponse({
-#         'draw': draw,
-#         'recordsTotal': len(df),
-#         'recordsFiltered': len(df),
-#         'data': data,
-#     })
 def retrieve_data_by_id(request, id):
-    # Initialize PySpark session
-    spark = SparkSession.builder.appName("FraudDetection").getOrCreate()
+    try:
+        os.environ["PYSPARK_PYTHON"] = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "venv", "Scripts", "python.exe")
+        os.environ["PYSPARK_DRIVER_PYTHON"] = os.environ["PYSPARK_PYTHON"]
+        
+        logger.info("Checking Spark session status...")
+        if SparkSession._instantiatedSession is None:
+            logger.info("Spark session has NOT been initialized.")
+        else:
+            logger.info("Spark session is already initialized.")
+            
+        # Thêm thông tin về đường dẫn
+        logger.info(f"SPARK_HOME: {os.environ.get('SPARK_HOME')}")
+        logger.info(f"HADOOP_HOME: {os.environ.get('HADOOP_HOME')}")
+        logger.info(f"JAVA_HOME: {os.environ.get('JAVA_HOME')}")
+        logger.info(f"PYSPARK_PYTHON: {os.environ.get('PYSPARK_PYTHON')}")
 
-    # Load the data
-    obj = DataFileUpload.objects.get(id=id)
-    df = spark.read.csv(obj.actual_file.path, header=True, inferSchema=True)
 
-    # Receive parameters from the frontend
-    customer_id = request.GET.get('customer_id')
-    tx_month = request.GET.get('tx_month')
+        # Khởi tạo Spark session
+        spark = SparkSession.builder.appName("FraudDetection").getOrCreate()
+        print("Spark session initialized successfully.")
 
-    # Convert TX_DATETIME to date and extract MM-YYYY
-    df = df.withColumn("TX_DATETIME", to_date(col("TX_DATETIME"), "yyyy-MM-dd HH:mm:ss"))
-    df = df.withColumn("TX_MONTH", date_format(col("TX_DATETIME"), "MM-yyyy"))
+        # Load the data
+        obj = DataFileUpload.objects.get(id=id)
+        df = spark.read.csv(obj.actual_file.path, header=True, inferSchema=True)
 
-    # Filter by customer_id and tx_month
-    if customer_id:
-        df = df.filter(col("CUSTOMER_ID") == int(customer_id))
-    if tx_month:
-        df = df.filter(col("TX_MONTH") == tx_month)
+        # Check if '_c0' exists in the schema and drop it
+        if '_c0' in df.columns:
+            df = df.drop('_c0')
 
-    # Convert to Pandas for DataTables
-    pandas_df = df.toPandas()
 
-    # Prepare data for pie chart
-    last_column = pandas_df.columns[-1]
-    pie_data = pandas_df[last_column].value_counts(normalize=True) * 100
-    pie_chart = {
-        "labels": pie_data.index.tolist(),
-        "values": pie_data.values.tolist()
-    }
+        # Receive parameters from the frontend
+        customer_id = request.GET.get('customer_id')
+        tx_month = request.GET.get('tx_month')
 
-    # Prepare data for bar chart
-    bar_data = pandas_df.groupby("CUSTOMER_ID")[last_column].value_counts(normalize=True).unstack(fill_value=0) * 100
-    bar_chart = {
-        "categories": bar_data.index.tolist(),
-        "series": [
-            {"name": col, "data": bar_data[col].tolist()} for col in bar_data.columns
-        ]
-    }
+        # Convert TX_DATETIME to date and extract MM-YYYY
+        df = df.withColumn("TX_DATETIME", to_date(col("TX_DATETIME"), "yyyy-MM-dd HH:mm:ss"))
+        df = df.withColumn("TX_MONTH", date_format(col("TX_DATETIME"), "MM-yyyy"))
 
-    # Return JSON response
-    return JsonResponse({
-        "data": pandas_df.to_dict(orient="records"),
-        "pie_chart": pie_chart,
-        "bar_chart": bar_chart
-    })
+        # Filter by customer_id and tx_month
+        if customer_id:
+            df = df.filter(col("CUSTOMER_ID") == int(customer_id))
+        if tx_month:
+            df = df.filter(col("TX_MONTH") == tx_month)
 
+        # Convert to Pandas for DataTables
+        pandas_df = df.toPandas()
+
+        # Prepare data for pie chart
+        pie_data = pandas_df['TX_FRAUD'].value_counts(normalize=True) * 100
+        pie_chart = {
+            "labels": pie_data.index.tolist(),
+            "values": pie_data.values.tolist()
+        }
+        print("Pie chart data: ", pie_chart)
+
+
+        # Paginate the data for the table
+        draw = int(request.GET.get('draw', 1))
+        start = int(request.GET.get('start', 0))
+        length = int(request.GET.get('length', 10))
+        paginated_df = pandas_df.iloc[start:start + length].reset_index()
+        paginated_df['index'] = paginated_df['index'] + 1 + start
+
+        # Convert the paginated data to a list of lists
+        data = paginated_df.values.tolist()
+
+        # Return JSON response
+        return JsonResponse({
+            'draw': draw,
+            'recordsTotal': len(pandas_df),
+            'recordsFiltered': len(pandas_df),
+            'data': data,
+            'pie_chart': pie_chart
+        })
+    except Exception as e:
+        logger.error(f"Error in retrieve_data_by_id: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+    
+    
 def userLogout(request):
     try:
       del request.session['username']
