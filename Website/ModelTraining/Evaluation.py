@@ -8,7 +8,8 @@ import sys
 from ModelTraining.SupportVectorMachine import SVMPipeline
 from Website.api.utils import metrics_calculator,model_evaluation,svm_evaluation
 from LogisticRegression import LogisticRegressionPipeline
-from ExtremeGradientBoost import XGBPipeline
+from ExtremeGradientBoost import XGBoostClassifierWrapper
+from RandomForest import RandomForestClassifierWrapper
 import pyspark
 findspark.init()
 
@@ -53,18 +54,25 @@ test_set = spark.read.csv('data/test_set.csv', inferSchema=True, header='true')
 # lr_predictions = lr_model.predict(test_set)
 # model_evaluation(lr_model,lr_predictions,"Logistic Regression")
 
+train_set = train_set.drop('TX_FRAUD_SCENARIO')
+test_set = test_set.drop('TX_FRAUD_SCENARIO')
+numerical_cols = ['TX_AMOUNT', 'TX_TIME_SECONDS', 'TX_TIME_DAYS', 'hour', 'day_of_week', 'month', 'minute', 'second']
+
+# print("Evaluation for Random Forest:\n")
+# rf_model = RandomForestClassifierWrapper()
+# rf_model, df_train_transformed, df_test_transformed = rf_model.fit(train_set, test_set, numerical_cols)
+# rf_model.save('Website/ModelTraining/RandomForestModel')
+# rf_predictions = rf_model.transform(df_test_transformed)
+# model_evaluation(rf_model,rf_predictions,"Random Forest")
+
 print("Evaluation for Extreme Gradient Boost Tree:\n")
-xgb_model = XGBPipeline(
-    label_col='TX_FRAUD',
-    num_boost_round=200,
-    num_workers=2,
-    max_depth=10,
-    learning_rate=0.1,
-    reg_alpha=0.1
-)
-xgb_model.fit(train_set)
-xgb_predictions = xgb_model.predict(test_set)
+xgb_model = XGBoostClassifierWrapper()
+xgb_model, df_train_transformed, df_test_transformed = xgb_model.fit(train_set, test_set, numerical_cols)
+xgb_model.save('Website/ModelTraining/XGBoostModel')
+xgb_predictions = xgb_model.transform(df_test_transformed)
 model_evaluation(xgb_model,xgb_predictions,"XGBoost")
+
+spark.stop()
 
 
 
