@@ -41,7 +41,7 @@ Detection System {% endblock %} {% block css %}
                 Delete
               </button></a
             >
-            <a href=""
+            <a href="{% url 'predict_button' i.id %}"
               ><button type="button" class="btn btn-success">
                 Prediction
               </button></a
