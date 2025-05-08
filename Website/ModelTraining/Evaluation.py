@@ -23,16 +23,8 @@ spark = SparkSession.builder \
     .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
     .getOrCreate()
 
-
-
-print(spark)
-print(pyspark.__version__)
-print("Using Python interpreter:", sys.executable)
-
 train_set = spark.read.csv('data/balanced_training_set.csv', inferSchema=True, header='true')
 test_set = spark.read.csv('data/test_set.csv', inferSchema=True, header='true')
-train_set = train_set.drop('TX_FRAUD_SCENARIO')
-test_set = test_set.drop('TX_FRAUD_SCENARIO')  # Adjust based on dataset size
 
 # svm_model = SVMPipeline(
 #     label_col="TX_FRAUD",

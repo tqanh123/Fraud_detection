@@ -20,25 +20,6 @@ def base(request):
     
 def upload_credit_data(request):
     return render(request,'api/upload_credit_data.html')
-def prediction_button(request, id):
-    try:
-        obj = DataFileUpload.objects.get(id=id)
-        spark = SparkSession.builder.appName("FraudDetection").getOrCreate()
-        df = spark.read.csv(obj.actual_file.path, header=True, inferSchema=True)
-        pandas_df, bar_chart = run_prediction(df)
-
-        return render(request, 'api/fraud_detection.html', {
-            'id': id,
-            'table_data': pandas_df.to_dict(orient="records"),
-            'columns': pandas_df.columns.tolist(),
-            'bar_chart': bar_chart
-        })
-
-    except FileNotFoundError as e:
-        return HttpResponse(f"Error: {str(e)}", status=404)
-    except Exception as e:
-        return HttpResponse(f"An unexpected error occurred: {str(e)}", status=500)
-
 def reports(request):
     all_data_files_objs=DataFileUpload.objects.all()
     return render(request,'api/reports.html',{'all_files':all_data_files_objs})
@@ -142,22 +123,26 @@ def userLogout(request):
     except:
       pass
     logout(request)
-    return HttpResponseRedirect('/') 
-    
-def predict_fraud(request):
-    if request.method == 'POST' and request.FILES.get('datafile'):
-        uploaded_file = request.FILES['datafile']
-        spark = SparkSession.builder.getOrCreate()
-        df = spark.read.csv(uploaded_file.temporary_file_path(), header=True, inferSchema=True)
+    return HttpResponseRedirect('/')
 
-        pandas_df, bar_chart = run_prediction(df)
+def prediction_button(request, id):
+    data_file = get_object_or_404(DataFileUpload, pk=id)
+    file_path = data_file.actual_file.path  # Full path to uploaded file
 
-        return render(request, 'api/fraud_detection.html', {
-            'table_data': pandas_df.to_dict(orient="records"),
-            'columns': pandas_df.columns.tolist(),
-            'bar_chart': bar_chart
-        })
-    return HttpResponse("No file uploaded", status=400)
+    spark = SparkSession.builder \
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
+        .getOrCreate()
+
+    df = spark.read.csv(file_path, header=True, inferSchema=True)
+
+    pandas_df, bar_chart = run_prediction(df)
+
+    return render(request, 'api/fraud_detection.html', {
+        'id': id,
+        'table_data': pandas_df.to_dict(orient="records"),
+        'columns': pandas_df.columns.tolist(),
+        'bar_chart': bar_chart
+    })
 
 def login2(request):
     data = {}

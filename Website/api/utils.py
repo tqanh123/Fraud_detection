@@ -5,10 +5,13 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from pyspark.ml import PipelineModel
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+from pyspark.sql import SparkSession
 from pyspark.sql.functions import hour, minute, second, dayofweek, month, year, to_timestamp, col
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, \
     classification_report, confusion_matrix, roc_curve
 import seaborn as sns
+
+
 
 def extract_time_features(df):
     df = df.withColumn('TX_DATETIME', to_timestamp(col('TX_DATETIME'), 'yyyy-MM-dd HH:mm:ss'))
@@ -25,11 +28,14 @@ def load_model(model_path):
     if os.path.exists(model_path):
         try:
             model = PipelineModel.load(model_path)
+            print(f"Model loaded successfully from {model_path}")
             return model
         except Exception as e:
-            return f"Error loading model: {str(e)}"
+            print(f"Error loading model from {model_path}: {str(e)}")
+            raise TypeError(f"Loaded model is not valid. Got: {str(e)}")
     else:
-        return "Model path does not exist"
+        print(f"Model path does not exist: {model_path}")
+        raise TypeError(f"Model path does not exist: {model_path}")
 
 def metrics_calculator(y_true, y_pred_class, y_pred_prob, model_name):
     '''
@@ -91,11 +97,17 @@ def model_evaluation(clf, test_predictions, model_name):
     print(result)
 
 def run_prediction(spark_df):
+    spark = SparkSession.builder \
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
+        .getOrCreate()
+
+    spark.conf.set("spark.sql.repl.eagerEval.enabled", True)
     # Extract time features
     df = extract_time_features(spark_df)
+    df = df.drop('TX_FRAUD_SCENARIO')
 
     # Load model
-    trained_model = load_model('ModelTraining/LogisticRegressionModel')
+    trained_model = load_model(model_path="ModelTraining/LogisticRegressionModel")
 
     # Predict
     predictions = trained_model.transform(df)
