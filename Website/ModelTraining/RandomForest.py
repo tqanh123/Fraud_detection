@@ -1,6 +1,9 @@
 from pyspark.ml.classification import RandomForestClassifier
 from pyspark.ml import Pipeline
+from pyspark.ml.pipeline import PipelineModel
 from pyspark.ml.feature import StringIndexer, VectorAssembler, StandardScaler
+import os
+from pyspark.ml.classification import RandomForestClassificationModel
 
 class RandomForestClassifierWrapper:
     def __init__(self,
@@ -45,6 +48,8 @@ class RandomForestClassifierWrapper:
         self.rawPredictionCol = rawPredictionCol
         self.leafCol = leafCol
         self.model = self._create_model()
+        self.pipeline_model = None
+        self.trained_model = None
 
     def _create_model(self):
         return RandomForestClassifier(
@@ -72,6 +77,7 @@ class RandomForestClassifierWrapper:
 
     def get_model(self):
         return self.model
+
     def fit(self, df_train, df_test, numerical_cols):
         # VectorAssembler + StandardScaler
         assembler = VectorAssembler(inputCols=numerical_cols, outputCol="num_features")
@@ -79,12 +85,51 @@ class RandomForestClassifierWrapper:
 
         # Pipeline
         pipeline = Pipeline(stages=[assembler, scaler])
-        pipeline_model = pipeline.fit(df_train)
+        self.pipeline_model = pipeline.fit(df_train)
 
-        df_train_transformed = pipeline_model.transform(df_train)
-        df_test_transformed = pipeline_model.transform(df_test)
+        df_train_transformed = self.pipeline_model.transform(df_train)
+        df_test_transformed = self.pipeline_model.transform(df_test)
         df_train_transformed = df_train_transformed.select('features', 'TX_FRAUD')
         df_test_transformed = df_test_transformed.select('features', 'TX_FRAUD')
 
         rf_model = self.model.fit(df_train_transformed)
+        self.trained_model = rf_model
         return rf_model, df_train_transformed, df_test_transformed
+
+    def savepip(self, path):
+        pipeline_path = os.path.join(path, "pipeline")
+        rf_model_path = os.path.join(path, "rf_model")
+
+        # Create directories if they do not exist
+        if not os.path.exists(pipeline_path):
+            os.makedirs(pipeline_path)
+            print(f"Created directory: {pipeline_path}")
+
+        if not os.path.exists(rf_model_path):
+            os.makedirs(rf_model_path)
+            print(f"Created directory: {rf_model_path}")
+
+        # Save the pipeline model with overwrite option
+        if self.pipeline_model:
+            print(f"Saving pipeline model to {pipeline_path}")
+            self.pipeline_model.write().overwrite().save(pipeline_path)  # Use overwrite() here
+        else:
+            raise ValueError("Pipeline model is not trained yet. Call `fit()` before saving.")
+
+        # Save the random forest model with overwrite option
+        if self.trained_model:
+            print(f"Saving RandomForest trained model to {rf_model_path}")
+            self.trained_model.write().overwrite().save(rf_model_path)  # ✅ Save trained model
+        else:
+            raise ValueError("Trained RandomForest model not found. Call `fit()` before saving.")
+
+    @staticmethod
+    def load_model_pip(path):
+        try:
+            pipeline_model = PipelineModel.load(os.path.join(path, "pipeline"))
+            rf_model = RandomForestClassificationModel.load(os.path.join(path, "rf_model"))
+            print(f"Model loaded successfully from {path}")
+            return pipeline_model, rf_model
+        except Exception as e:
+            print(f"Error loading model from {path}: {str(e)}")
+            raise TypeError(f"Loaded model is not valid. Got: {str(e)}")

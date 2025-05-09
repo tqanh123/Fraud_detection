@@ -10,8 +10,15 @@ from pyspark.sql.functions import hour, minute, second, dayofweek, month, year, 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, \
     classification_report, confusion_matrix, roc_curve
 import seaborn as sns
+from ModelTraining.RandomForest import RandomForestClassifierWrapper
+from ModelTraining.ExtremeGradientBoost import XGBoostClassifierWrapper
+import os
+os.environ["PYSPARK_PYTHON"] = "/Users/vothao/Fraud_detection/.venv/bin/python"
+from pyspark.sql import SparkSession
 
-
+spark = SparkSession.builder \
+    .appName("YourApp") \
+    .getOrCreate()
 
 def extract_time_features(df):
     df = df.withColumn('TX_DATETIME', to_timestamp(col('TX_DATETIME'), 'yyyy-MM-dd HH:mm:ss'))
@@ -107,10 +114,14 @@ def run_prediction(spark_df):
     df = df.drop('TX_FRAUD_SCENARIO')
 
     # Load model
-    trained_model = load_model(model_path="ModelTraining/LogisticRegressionModel")
+    # trained_model = load_model(model_path="/Users/vothao/Fraud_detection/Website/ModelTraining/RandomForestModel")
 
+    #rf and xgboost
+    loaded_pipeline_model, trained_rf_model = RandomForestClassifierWrapper.load_model_pip('Website/ModelTraining/RandomForestModel')
+    # loaded_pipeline_model, trained_xgb_model = XGBoostClassifierWrapper.load_model_pip('Website/ModelTraining/XGBoostModel')
+    df = loaded_pipeline_model.transform(df)
     # Predict
-    predictions = trained_model.transform(df)
+    predictions = trained_rf_model.transform(df)
 
     # Convert to Pandas
     pd_df = predictions.toPandas()
