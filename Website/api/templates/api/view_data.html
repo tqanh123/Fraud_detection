@@ -9,6 +9,12 @@ Home | Fraud Detection System
 <link href="{% static 'assets/css/teststyle.css' %}" rel="stylesheet">
 <link href="{% static 'assets/css/style.css' %}" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
+
+
 {% endblock %}
 {% block content %}
 <main id="main">
@@ -30,27 +36,40 @@ Home | Fraud Detection System
                 class="table table-striped table-bordered dt-responsive nowrap table-wrapper-scroll-y my-custom-scrollbar"
                 style="width: 100%; margin: 0px">
             </table>
+            <div class="loadingSpinner" style="display: none; text-align: center; margin-top: 20px;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <p>Loading data, please wait...</p>
+            </div>
         </div>
         <!-- Filter Section and Chart -->
         <div style="display: flex; margin-left: 30px; margin-bottom: 20px; flex-direction: column; width: 30%;">
+
             <form id="filterForm" class="filter-container" style=" display: flex; flex-direction: column; margin-bottom: 30px; ">
                 <div style="display: flex;
                             justify-content: space-between;">
-                    <select id="customerFilter" name="customer_id" class="form-control" style="display: inline-block; width: 200px; margin-right: 10px;">
-                        <option value="">Select Customer ID</option>
-                    </select>
-                    <select id="monthFilter" name="tx_month" class="form-control" style="display: inline-block; width: 200px; margin-right: 10px;">
-                        <option value="">Select Month</option>
-                    </select>
+                    <input id="customerFilter" name="customer_id" type="text" class="form-control"
+                    placeholder="Enter Customer ID" style="display: inline-block; width: 200px; margin-right: 10px;">
+                    <input id="monthFilter" name="tx_month" type="text" class="form-control"
+                            placeholder="Enter Month (e.g., 01-2025)" style="display: inline-block; width: 200px; margin-right: 10px;">
                 </div>
                 <button type="submit" id="filterButton" class="btn btn-primary" style="width: 80px; margin-top: 20px;">Filter</button>
             </form>
             <div style="max-width: 600px; border: 1px solid #ccc; border-radius: 5px; padding: 10px; background-color: #f9f9f9; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <h3 style="text-align: center; margin-bottom: 10px;">Transaction Distribution of Fraud Scenario</h3>
+                <div class="loadingSpinner" style="display: none; text-align: center; margin-top: 20px;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="sr-only">Loading...</span>
+                    </div>
+                    <p>Loading data, please wait...</p>
+                </div>
                 <canvas id="pieChart" style="max-width: 100%;"></canvas>
             </div>
         </div>
     </div>
+    <!-- ___________________________________Loading____________________________________________ -->
+
     </section><!-- End Hero -->
 </main>
 <script>
@@ -61,7 +80,10 @@ Home | Fraud Detection System
             { title: "{{ col }}" },
             {% endfor %}
         ];
+        // Initialize DataTable
 
+
+        console.log("Retrieve Data URL: {% url 'retrieve_data_by_id' id %}");
         var table = $('#example').DataTable({
             serverSide: true,
             processing: true,
@@ -72,6 +94,23 @@ Home | Fraud Detection System
                 data: function (d) {
                     d.customer_id = $('#customerFilter').val();
                     d.tx_month = $('#monthFilter').val();
+                },
+                beforeSend: function () {
+                    // Hiển thị spinner trước khi gửi yêu cầu
+                    $('.loadingSpinner').show();
+                },
+                complete: function () {
+                    // Ẩn spinner sau khi nhận được phản hồi
+                    $('.loadingSpinner').hide();
+                },
+                error: function (xhr, error, thrown) {
+                    console.error('Error in AJAX request:', error);
+                    $('.loadingSpinner').hide();
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        alert('Error: ' + xhr.responseJSON.error);
+                    } else {
+                        alert('An error occurred while fetching data.');
+                    }
                 }
             },
             columns: columns,
@@ -86,69 +125,40 @@ Home | Fraud Detection System
             }
         });
 
-        // Populate Customer ID and Month filters dynamically
-        function populateFilters() {
-            $.get("{% url 'retrieve_data_by_id' id %}", function (response) {
-                const data = response.data;
-                const customerIndex = columns.findIndex(col => col.title === 'CUSTOMER_ID');
-                const dateIndex = columns.findIndex(col => col.title === 'TX_DATETIME');
-
-                const customerIds = [...new Set(data.map(row => row[customerIndex]))];
-                $('#customerFilter').html('<option value="">Select Customer ID</option>');
-                customerIds.forEach(id => {
-                    $('#customerFilter').append(`<option value="${id}">${id}</option>`);
-                });
-
-                // Populate Months (MM-YYYY format)
-                const months = [...new Set(data.map(row => {
-                    const date = new Date(row[dateIndex]);
-                    if (!isNaN(date)) { // Ensure the date is valid
-                        const month = String(date.getMonth() + 1).padStart(2, '0'); // Two-digit month
-                        const year = date.getFullYear();
-                        return `${month}-${year}`;
-                    }
-                    return null; // Skip invalid dates
-                }).filter(Boolean))]; // Remove null values
-                $('#monthFilter').html('<option value="">Select Month</option>');
-                months.forEach(month => {
-                    $('#monthFilter').append(`<option value="${month}">${month}</option>`);
-                });
-            });
-        }
-
-        populateFilters();
 
         // Handle filtering on form submit
         $('#filterForm').on('submit', function (e) {
             e.preventDefault();
+            var customerId = $('#customerFilter').val();
+            var month = $('#monthFilter').val();
+            console.log("Customer ID: " + customerId);
+            console.log("Month: " + month);
             table.ajax.reload();
         });
 
         // Render pie chart after filtering
         table.on('xhr', function () {
-            var data = table.ajax.json().data;
-            var lastColumnData = data.map(row => row[row.length - 1]); // last column
-            var counts = {};
-            lastColumnData.forEach(val => {
-                counts[val] = (counts[val] || 0) + 1;
-            });
+            var response = table.ajax.json();
 
-            var labels = Object.keys(counts);
-            var values = Object.values(counts);
+            // Pie Chart Data
+            var pieLabels = response.pie_chart.labels;
+            var pieValues = response.pie_chart.values;
 
-            // Destroy previous chart if exists
+            // Destroy previous pie chart if exists
             if (window.pieChartInstance) {
                 window.pieChartInstance.destroy();
             }
 
-            var ctx = document.getElementById('pieChart').getContext('2d');
-            window.pieChartInstance = new Chart(ctx, {
+            var pieCtx = document.getElementById('pieChart').getContext('2d');
+            window.pieChartInstance = new Chart(pieCtx, {
                 type: 'pie',
                 data: {
-                    labels: labels,
+                    labels: pieLabels.map(label => label == 0 ? 'Not Fraud' : label == 1 ? 'Fraud' : label),
                     datasets: [{
-                        data: values,
-                        backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
+                        data: pieValues,
+                        backgroundColor: pieLabels.length === 1 && pieLabels[0] === 'No Data'
+                            ? ['#d3d3d3'] // Gray color for "No Data"
+                            : ['#36A2EB', '#FF6384']
                     }]
                 },
                 options: {
@@ -158,15 +168,37 @@ Home | Fraud Detection System
                         tooltip: {
                             callbacks: {
                                 label: function (tooltipItem) {
-                                    var total = values.reduce((a, b) => a + b, 0);
-                                    var value = values[tooltipItem.dataIndex];
+                                    if (pieLabels[tooltipItem.dataIndex] === 'No Data') {
+                                        return 'No Data';
+                                    }
+                                    var total = pieValues.reduce((a, b) => a + b, 0);
+                                    var value = pieValues[tooltipItem.dataIndex];
                                     var percentage = ((value / total) * 100).toFixed(2);
-                                    return `${labels[tooltipItem.dataIndex]}: ${percentage}%`;
+                                    return `${pieLabels[tooltipItem.dataIndex]}: ${percentage}%`;
                                 }
                             }
+                        },
+                        datalabels: {
+                            formatter: function (value, context) {
+                                if (context.chart.data.datasets[0].data.length === 1 && context.chart.data.labels[0] === 'No Data') {
+                                    return 'No Data';
+                                }
+                                var total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                                var percentage = ((value / total) * 100).toFixed(2);
+                                return `${percentage}%`;
+                            },
+                            color: '#fff',
+                            anchor: 'center',
+                            align: 'center',
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
                         }
+
                     }
-                }
+                },
+                plugins: [ChartDataLabels]
             });
         });
     });
